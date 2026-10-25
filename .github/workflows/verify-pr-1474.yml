@@ -1,0 +1,57 @@
+name: Verify PR 1474 on Linux
+on:
+  push:
+    branches: [codex/verify-pr-1474]
+permissions:
+  contents: read
+jobs:
+  verify:
+    name: Verify ${{ matrix.target.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: upstream
+            sha: b5afdefc6f68c8b8e5b135ded931ad537b2d28eb
+          - name: pr1474
+            sha: 98401a544fa209a8788378f0e61a0cfbffcb7d80
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ matrix.target.sha }}
+          persist-credentials: false
+          lfs: true
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run build:packages
+      - name: Unit suite
+        id: unit
+        continue-on-error: true
+        run: bun run test:unit
+      - name: Package checks
+        id: packages
+        continue-on-error: true
+        run: bun run check:packages
+      - name: Tool types
+        id: tools_types
+        continue-on-error: true
+        run: bun run check:tools
+      - name: Tool tests
+        id: tools_tests
+        continue-on-error: true
+        run: bun run test:tools
+      - name: Duplication check
+        id: dupes
+        continue-on-error: true
+        run: bun run test:dupes
+      - name: Record every outcome
+        if: always()
+        env:
+          RESULTS: ${{ toJSON(steps) }}
+        run: |
+          printf '%s\n' "$RESULTS" >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESULTS" | jq -e '[.unit.outcome, .packages.outcome, .tools_types.outcome, .tools_tests.outcome, .dupes.outcome] | all(. == "success")'
